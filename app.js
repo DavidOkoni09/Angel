@@ -250,17 +250,21 @@ checkAuth();
 
 
 
-// SIDEBAR FULLY HIDDEN TOGGLE LOGIC
+// SIDEBAR TOGGLE WITH OVERLAY BUTTON CONTRAST
 const sidebar = document.querySelector(".sidebar");
+const appLayout = document.querySelector(".app-layout");
 const toggleBtn = document.getElementById("toggle-sidebar-btn");
 
-// Restore saved sidebar state from LocalStorage
+// Load initial state
 if (localStorage.getItem("sidebar_collapsed") === "true") {
   sidebar?.classList.add("collapsed");
+  appLayout?.classList.add("has-collapsed-sidebar");
 }
 
 toggleBtn?.addEventListener("click", () => {
-  sidebar.classList.toggle("collapsed");
-  const isCollapsed = sidebar.classList.contains("collapsed");
+  sidebar?.classList.toggle("collapsed");
+  appLayout?.classList.toggle("has-collapsed-sidebar");
+  
+  const isCollapsed = sidebar?.classList.contains("collapsed");
   localStorage.setItem("sidebar_collapsed", isCollapsed);
 });

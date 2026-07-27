@@ -55,7 +55,7 @@ body {
     align-items: center;
     justify-content: center;
     font-size: 1.2rem;
-    margin: 0 auto 12px;
+    margin: 0 auto 1px;
 }
 
 /* APP LAYOUT */
@@ -78,7 +78,7 @@ body {
     padding: 24px 20px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     color: white;
 }
 
@@ -167,7 +167,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0 32px;
+    padding: 0 32px 0 64px;
 }
 
 .breadcrumb {
@@ -524,13 +524,18 @@ body {
 
 .hamburger-btn {
     background: transparent;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e1;
     color: var(--text-dark);
     font-size: 1.1rem;
-    padding: 6px 10px;
-    border-radius: 6px;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
 }
 
 .hamburger-btn:hover {
@@ -549,6 +554,12 @@ body {
     transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 100;
     height: 100vh;
+}
+
+.app-layout:not(.has-collapsed-sidebar) .hamburger-btn {
+    background: var(--sidebar-hover);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2); 
 }
 
 /* FULLY HIDDEN STATE */
@@ -573,5 +584,97 @@ body {
         left: 0;
         top: 0;
         width: 100%;
+    }
+}
+
+
+/* =========================================================
+   MOBILE & TABLET RESPONSIVE MEDIA QUERY (< 768px)
+   ========================================================= */
+@media screen and (max-width: 768px) {
+
+    /* Layout adjustments */
+    .app-layout {
+        position: relative;
+    }
+
+    /* Make sidebar slide over content on mobile instead of pushing it */
+    .sidebar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Default mobile state: hidden off-screen */
+    .sidebar.collapsed {
+        margin-left: -250px;
+    }
+
+    /* Header mobile padding */
+    .top-header {
+        padding: 0 16px;
+    }
+
+    /* Content area mobile padding */
+    .content-body {
+        padding: 16px;
+    }
+
+    /* Stack metric cards vertically on small screens */
+    .metrics-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    /* Stack dashboard widgets vertically */
+    .dashboard-widgets {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    /* Header title & button stacking for Patients and Records pages */
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .page-header .btn {
+        width: 100%;
+    }
+
+    /* Form row elements (like Gender & DOB) stack on phones */
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+
+    /* Table overflow wrapper so tables slide horizontally without breaking mobile width */
+    .table-card {
+        overflow-x: auto;
+    }
+
+    /* Modal responsiveness for phone screens */
+    .modal-content {
+        width: 92%;
+        padding: 16px;
+        margin: 0 16px;
+    }
+
+    .hamburger-btn {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 1001;
+        /* Keeps it layered above the sidebar */
+        width: 25px;
+        height: 25px;
+
+    }
+
+    .header-left {
+        margin-left: 30px;
     }
 }
