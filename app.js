@@ -56,9 +56,9 @@ function checkAuth() {
     const displayRole = document.getElementById("user-role-badge");
     const displayAvatar = document.getElementById("avatar-circle");
 
-    if (displayName) displayName.textContent = currentUser.username === "admin" ? "Owokoni Agrinya" : "Dr. Ana";
+    if (displayName) displayName.textContent = currentUser.username === "admin" ? "Angel Nelson" : "Dr. Ana";
     if (displayRole) displayRole.textContent = currentUser.role === "admin" ? "Admin" : "Doctor";
-    if (displayAvatar) displayAvatar.textContent = currentUser.username === "admin" ? "OA" : "DA";
+    if (displayAvatar) displayAvatar.textContent = currentUser.username === "admin" ? "AN" : "DA";
 
     if (isIndex) renderDashboard();
   }
