@@ -44,16 +44,15 @@
         </aside>
 
         <div class="main-wrapper">
-            <!-- Inside <header class="top-header"> -->
+            <!-- Header -->
             <header class="top-header">
                 <div class="header-left">
-                    <!-- HAMBURGER MENU BUTTON -->
                     <button id="toggle-sidebar-btn" class="hamburger-btn">
                         <i class="fa-solid fa-bars"></i>
                     </button>
                     <div class="breadcrumb">Medical Records</div>
                 </div>
-            
+
                 <div class="user-profile">
                     <div id="avatar-circle" class="avatar">AN</div>
                     <div class="user-info">
@@ -64,6 +63,7 @@
             </header>
 
             <main class="content-body">
+                <!-- ACTIVE RECORDS SECTION -->
                 <div class="page-header">
                     <div>
                         <h2>Medical Records</h2>
@@ -76,7 +76,8 @@
 
                 <div class="search-box">
                     <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                    <input type="text" id="record-search" placeholder="Filter by Patient ID or Diagnosis..." />
+                    <input type="text" id="record-search"
+                        placeholder="Filter active records by Patient ID or Diagnosis..." />
                 </div>
 
                 <div class="table-card">
@@ -93,6 +94,47 @@
                         </thead>
                         <tbody id="records-list"></tbody>
                     </table>
+                </div>
+
+                <!-- SEPARATOR SPACE -->
+                <div style="margin-top: 3.5rem;"></div>
+
+                <!-- ARCHIVED RECORDS COLLAPSIBLE ACCORDION -->
+                <div class="page-header" style="cursor: pointer; user-select: none; margin-bottom: 1rem;"
+                    id="toggle-archive-btn">
+                    <div>
+                        <h2 style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fa-solid fa-box-archive" style="color: #0d9488;"></i>
+                            Archived Records
+                            <span id="archived-count-badge"
+                                style="font-size: 0.85rem; background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 9999px;">0</span>
+                        </h2>
+                        <p>Click to view or hide previously archived medical records.</p>
+                    </div>
+                    <button type="button" class="btn btn-outline" style="pointer-events: none;">
+                        <span id="archive-toggle-text">Show Archive</span>
+                        <i id="archive-chevron-icon" class="fa-solid fa-chevron-down"
+                            style="margin-left: 6px; transition: transform 0.2s;"></i>
+                    </button>
+                </div>
+
+                <!-- COLLAPSIBLE CONTENT (HIDDEN BY DEFAULT) -->
+                <div id="archived-section-content" class="hidden">
+                    <div class="table-card">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>RECORD ID</th>
+                                    <th>PATIENT ID</th>
+                                    <th>VISIT DATE</th>
+                                    <th>DIAGNOSIS</th>
+                                    <th>ARCHIVED DATE</th>
+                                    <th>ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="archived-records-list"></tbody>
+                        </table>
+                    </div>
                 </div>
             </main>
         </div>

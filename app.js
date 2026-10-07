@@ -24,6 +24,7 @@ function setStored(key, data) {
 
 let patients = getStored("bmc_patients", defaultPatients);
 let records = getStored("bmc_records", defaultRecords);
+let archivedRecords = getStored("bmc_archived_records", []);
 let currentUser = JSON.parse(sessionStorage.getItem("bmc_current_user")) || null;
 
 // FLEXIBLE ROUTE DETECTION
@@ -40,13 +41,11 @@ function checkAuth() {
       window.location.href = "index.html";
       return;
     }
-    // On index.html and not logged in: show login form, hide app
     const authBox = document.getElementById("auth-container");
     const appBox = document.getElementById("app-container");
     if (authBox) authBox.classList.remove("hidden");
     if (appBox) appBox.classList.add("hidden");
   } else {
-    // Logged in: hide login form, show app
     const authBox = document.getElementById("auth-container");
     const appBox = document.getElementById("app-container");
     if (authBox) authBox.classList.add("hidden");
@@ -178,24 +177,92 @@ if (isPatient) {
 
 // MEDICAL RECORDS PAGE LOGIC
 if (isMedical) {
+  // Render Active Records
   const renderRecords = (filter = "") => {
     const list = document.getElementById("records-list");
     if (!list) return;
     list.innerHTML = "";
-    records
-      .filter((r) => r.patient_id.toLowerCase().includes(filter.toLowerCase()) || r.diagnosis.toLowerCase().includes(filter.toLowerCase()))
-      .forEach((r) => {
-        list.innerHTML += `
-          <tr>
-            <td><strong>${r.record_id}</strong></td>
-            <td>${r.patient_id}</td>
-            <td>${r.visit_date}</td>
-            <td>${r.diagnosis}</td>
-            <td>${r.treatment}</td>
-            <td><button class="link-btn" style="color:#ef4444;" onclick="deleteRecord('${r.record_id}')">Delete</button></td>
-          </tr>`;
-      });
+    const filtered = records.filter(
+      (r) =>
+        r.patient_id.toLowerCase().includes(filter.toLowerCase()) ||
+        r.diagnosis.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    if (filtered.length === 0) {
+      list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No active records found.</td></tr>`;
+      return;
+    }
+
+    filtered.forEach((r) => {
+      list.innerHTML += `
+        <tr>
+          <td><strong>${r.record_id}</strong></td>
+          <td>${r.patient_id}</td>
+          <td>${r.visit_date}</td>
+          <td>${r.diagnosis}</td>
+          <td>${r.treatment}</td>
+          <td>
+            <button class="link-btn" style="color:#d97706;" onclick="archiveRecord('${r.record_id}')">
+              <i class="fa-solid fa-box-archive"></i> Archive
+            </button>
+          </td>
+        </tr>`;
+    });
   };
+
+  // Render Archived Records Table and update badge counter
+  const renderArchivedRecords = () => {
+    const list = document.getElementById("archived-records-list");
+    const countBadge = document.getElementById("archived-count-badge");
+    if (countBadge) countBadge.textContent = archivedRecords.length;
+
+    if (!list) return;
+    list.innerHTML = "";
+
+    if (archivedRecords.length === 0) {
+      list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No archived records available.</td></tr>`;
+      return;
+    }
+
+    archivedRecords.forEach((r) => {
+      const formattedDate = r.archivedAt ? r.archivedAt.split("T")[0] : "N/A";
+      list.innerHTML += `
+        <tr>
+          <td><strong>${r.record_id}</strong></td>
+          <td>${r.patient_id}</td>
+          <td>${r.visit_date}</td>
+          <td>${r.diagnosis}</td>
+          <td>${formattedDate}</td>
+          <td>
+            <button class="link-btn" style="color:#0d9488; margin-right: 12px;" onclick="restoreRecord('${r.record_id}')">
+              <i class="fa-solid fa-rotate-left"></i> Restore
+            </button>
+            <button class="link-btn" style="color:#dc2626;" onclick="deleteArchivedRecord('${r.record_id}')">
+              <i class="fa-solid fa-trash-can"></i> Delete
+            </button>
+          </td>
+        </tr>`;
+    });
+  };
+
+  // Toggle Collapse/Dropdown for Archived Records
+  const toggleArchiveBtn = document.getElementById("toggle-archive-btn");
+  const archiveContent = document.getElementById("archived-section-content");
+  const archiveChevron = document.getElementById("archive-chevron-icon");
+  const archiveToggleText = document.getElementById("archive-toggle-text");
+
+  if (toggleArchiveBtn && archiveContent) {
+    toggleArchiveBtn.addEventListener("click", () => {
+      const isHidden = archiveContent.classList.toggle("hidden");
+      if (isHidden) {
+        if (archiveToggleText) archiveToggleText.textContent = "Show Archive";
+        if (archiveChevron) archiveChevron.style.transform = "rotate(0deg)";
+      } else {
+        if (archiveToggleText) archiveToggleText.textContent = "Hide Archive";
+        if (archiveChevron) archiveChevron.style.transform = "rotate(180deg)";
+      }
+    });
+  }
 
   const populatePatients = () => {
     const sel = document.getElementById("record_patient_id");
@@ -205,6 +272,7 @@ if (isMedical) {
   };
 
   renderRecords();
+  renderArchivedRecords();
   populatePatients();
 
   const rSearch = document.getElementById("record-search");
@@ -236,14 +304,54 @@ if (isMedical) {
       setStored("bmc_records", records);
       renderRecords();
       modal?.classList.add("hidden");
+      rForm.reset();
     };
   }
 
-  window.deleteRecord = (id) => {
-    if (confirm("Delete this record?")) {
-      records = records.filter((r) => r.record_id !== id);
-      setStored("bmc_records", records);
-      renderRecords();
+  // ARCHIVE RECORD ACTION
+  window.archiveRecord = (id) => {
+    if (confirm("Are you sure you want to archive this record?")) {
+      const recordToArchive = records.find((r) => r.record_id === id);
+
+      if (recordToArchive) {
+        archivedRecords = getStored("bmc_archived_records", []);
+        archivedRecords.push({ ...recordToArchive, archivedAt: new Date().toISOString() });
+        setStored("bmc_archived_records", archivedRecords);
+
+        records = records.filter((r) => r.record_id !== id);
+        setStored("bmc_records", records);
+
+        renderRecords();
+        renderArchivedRecords();
+      }
+    }
+  };
+
+  // RESTORE ARCHIVED RECORD ACTION
+  window.restoreRecord = (id) => {
+    if (confirm("Restore this record back to active records?")) {
+      const recordToRestore = archivedRecords.find((r) => r.record_id === id);
+
+      if (recordToRestore) {
+        archivedRecords = archivedRecords.filter((r) => r.record_id !== id);
+        setStored("bmc_archived_records", archivedRecords);
+
+        delete recordToRestore.archivedAt;
+        records.push(recordToRestore);
+        setStored("bmc_records", records);
+
+        renderRecords();
+        renderArchivedRecords();
+      }
+    }
+  };
+
+  // PERMANENTLY DELETE ARCHIVED RECORD ACTION
+  window.deleteArchivedRecord = (id) => {
+    if (confirm("Are you sure you want to permanently delete this archived record? This action cannot be undone.")) {
+      archivedRecords = archivedRecords.filter((r) => r.record_id !== id);
+      setStored("bmc_archived_records", archivedRecords);
+      renderArchivedRecords();
     }
   };
 }
