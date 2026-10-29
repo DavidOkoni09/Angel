@@ -124,7 +124,7 @@ async function initializeAppData() {
   }
   if (isReport) populateReportPatientSelect();
 
-  setupRealtimeListeners();
+  //setupRealtimeListeners();
 }
 
 function setupRealtimeListeners() {
