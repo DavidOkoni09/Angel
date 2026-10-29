@@ -1,7 +1,7 @@
 // ==========================================
 // 1. SUPABASE INITIALIZATION
 // ==========================================
-const SUPABASE_URL = "https://xhzmedynqgpfvycnlnuf.supabase.co/rest/v1"; // e.g. https://xyz.supabase.co
+const SUPABASE_URL = "https://xhzmedynqgpfvycnlnuf.supabase.co/"; // e.g. https://xyz.supabase.co
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhoem1lZHlucWdwZnZ5Y25sbnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNTMzMzEsImV4cCI6MjEwODgyOTMzMX0.1M1QGNDXT6BL6Ergcqq_q96JDvShOJCocbgym-t5zFQ"; // public anon key
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
