@@ -1,40 +1,28 @@
-// INITIAL DATA
-const defaultPatients = [
-  { patient_id: "PAT-1001", full_name: "John Doe", gender: "Male", dob: "1995-06-15", phone: "08012345678", address: "Calabar" },
-  { patient_id: "PAT-1002", full_name: "Mary Okon", gender: "Female", dob: "1990-03-22", phone: "08098765432", address: "Calabar" },
-  { patient_id: "PAT-1003", full_name: "Emeka Obi", gender: "Male", dob: "1988-11-09", phone: "07055667788", address: "Calabar" }
-];
+// ==========================================
+// 1. SUPABASE INITIALIZATION
+// ==========================================
+const SUPABASE_URL = "https://xhzmedynqgpfvycnlnuf.supabase.co/rest/v1"; // e.g. https://xyz.supabase.co
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhoem1lZHlucWdwZnZ5Y25sbnVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyNTMzMzEsImV4cCI6MjEwODgyOTMzMX0.1M1QGNDXT6BL6Ergcqq_q96JDvShOJCocbgym-t5zFQ"; // public anon key
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const defaultRecords = [
-  { record_id: "REC-5001", patient_id: "PAT-1001", visit_date: "2026-07-20", diagnosis: "Acute Malaria", treatment: "Artemether + Lumefantrine", notes: "Rest advised." }
-];
-
-function getStored(key, fallback) {
-  const data = localStorage.getItem(key);
-  if (!data) {
-    localStorage.setItem(key, JSON.stringify(fallback));
-    return fallback;
-  }
-  return JSON.parse(data);
-}
-
-function setStored(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
-
-let patients = getStored("bmc_patients", defaultPatients);
-let records = getStored("bmc_records", defaultRecords);
-let archivedRecords = getStored("bmc_archived_records", []);
+// In-memory runtime state synced with Supabase
+let patients = [];
+let records = [];
+let archivedRecords = [];
 let currentUser = JSON.parse(sessionStorage.getItem("bmc_current_user")) || null;
 
-// FLEXIBLE ROUTE DETECTION
+// ==========================================
+// 2. ROUTE DETECTION
+// ==========================================
 const rawPath = window.location.pathname.toLowerCase().split("/").pop();
 const isIndex = rawPath === "" || rawPath === "index.html" || rawPath === "index";
 const isPatient = rawPath === "patient.html" || rawPath === "patient";
 const isMedical = rawPath === "medical.html" || rawPath === "medical";
 const isReport = rawPath === "report.html" || rawPath === "report";
 
-// AUTHENTICATION GUARD
+// ==========================================
+// 3. AUTHENTICATION GUARD
+// ==========================================
 function checkAuth() {
   if (!currentUser) {
     if (!isIndex) {
@@ -59,7 +47,8 @@ function checkAuth() {
     if (displayRole) displayRole.textContent = currentUser.role === "admin" ? "Admin" : "Doctor";
     if (displayAvatar) displayAvatar.textContent = currentUser.username === "admin" ? "AN" : "DA";
 
-    if (isIndex) renderDashboard();
+    // Load initial data once authenticated
+    initializeAppData();
   }
 }
 
@@ -97,7 +86,71 @@ if (logoutBtn) {
   });
 }
 
-// DASHBOARD RENDER LOGIC
+// ==========================================
+// 4. SUPABASE DATA FETCHING & REALTIME SYNC
+// ==========================================
+async function fetchPatients() {
+  const { data, error } = await supabaseClient
+    .from("patients")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (!error && data) {
+    patients = data;
+  }
+}
+
+async function fetchRecords() {
+  const { data, error } = await supabaseClient
+    .from("records")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (!error && data) {
+    records = data.filter((r) => !r.is_archived);
+    archivedRecords = data.filter((r) => r.is_archived);
+  }
+}
+
+async function initializeAppData() {
+  await Promise.all([fetchPatients(), fetchRecords()]);
+
+  if (isIndex) renderDashboard();
+  if (isPatient) renderPatients();
+  if (isMedical) {
+    renderRecords();
+    renderArchivedRecords();
+    populatePatientsDropdown();
+  }
+  if (isReport) populateReportPatientSelect();
+
+  setupRealtimeListeners();
+}
+
+function setupRealtimeListeners() {
+  supabaseClient
+    .channel("public-db-sync")
+    .on("postgres_changes", { event: "*", schema: "public", table: "patients" }, async () => {
+      await fetchPatients();
+      if (isIndex) renderDashboard();
+      if (isPatient) renderPatients();
+      if (isMedical) populatePatientsDropdown();
+      if (isReport) populateReportPatientSelect();
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "records" }, async () => {
+      await fetchRecords();
+      if (isIndex) renderDashboard();
+      if (isMedical) {
+        renderRecords();
+        renderArchivedRecords();
+      }
+    })
+    .subscribe();
+}
+
+// ==========================================
+// 5. DASHBOARD PAGE LOGIC
+// ==========================================
 function renderDashboard() {
   const pStat = document.getElementById("stat-patient-count");
   const rStat = document.getElementById("stat-record-count");
@@ -107,7 +160,7 @@ function renderDashboard() {
   const recentList = document.getElementById("recent-records-list");
   if (recentList) {
     recentList.innerHTML = "";
-    records.slice(-3).reverse().forEach((r) => {
+    records.slice(0, 3).forEach((r) => {
       const p = patients.find((pat) => pat.patient_id === r.patient_id);
       recentList.innerHTML += `
         <tr>
@@ -119,29 +172,40 @@ function renderDashboard() {
   }
 }
 
-// PATIENT PAGE LOGIC
+// ==========================================
+// 6. PATIENT PAGE LOGIC
+// ==========================================
+function renderPatients(filter = "") {
+  const list = document.getElementById("patients-list");
+  if (!list) return;
+  list.innerHTML = "";
+
+  const filtered = patients.filter(
+    (p) =>
+      p.full_name.toLowerCase().includes(filter.toLowerCase()) ||
+      p.patient_id.toLowerCase().includes(filter.toLowerCase()) ||
+      (p.phone && p.phone.includes(filter))
+  );
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding:1.25rem;">No patient records found.</td></tr>`;
+    return;
+  }
+
+  filtered.forEach((p) => {
+    list.innerHTML += `
+      <tr>
+        <td><strong>${p.patient_id}</strong></td>
+        <td><i class="fa-regular fa-user" style="margin-right:8px; color:#0d9488;"></i>${p.full_name}</td>
+        <td>${p.gender}</td>
+        <td>${p.dob}</td>
+        <td>${p.phone}</td>
+        <td><a href="report.html?patient_id=${p.patient_id}" class="link-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a></td>
+      </tr>`;
+  });
+}
+
 if (isPatient) {
-  const renderPatients = (filter = "") => {
-    const list = document.getElementById("patients-list");
-    if (!list) return;
-    list.innerHTML = "";
-    patients
-      .filter((p) => p.full_name.toLowerCase().includes(filter.toLowerCase()) || p.patient_id.toLowerCase().includes(filter.toLowerCase()))
-      .forEach((p) => {
-        list.innerHTML += `
-          <tr>
-            <td><strong>${p.patient_id}</strong></td>
-            <td><i class="fa-regular fa-user" style="margin-right:8px; color:#0d9488;"></i>${p.full_name}</td>
-            <td>${p.gender}</td>
-            <td>${p.dob}</td>
-            <td>${p.phone}</td>
-            <td><a href="report.html?patient_id=${p.patient_id}" class="link-btn"><i class="fa-solid fa-clock-rotate-left"></i> History</a></td>
-          </tr>`;
-      });
-  };
-
-  renderPatients();
-
   const pSearch = document.getElementById("patient-search");
   if (pSearch) pSearch.addEventListener("input", (e) => renderPatients(e.target.value));
 
@@ -158,94 +222,123 @@ if (isPatient) {
 
   const pForm = document.getElementById("patient-form");
   if (pForm) {
-    pForm.onsubmit = (e) => {
+    pForm.onsubmit = async (e) => {
       e.preventDefault();
-      patients.push({
+      const submitBtn = pForm.querySelector("button[type='submit']");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving...";
+      }
+
+      const newPatient = {
         patient_id: "PAT-" + Math.floor(1000 + Math.random() * 9000),
-        full_name: document.getElementById("full_name").value,
+        full_name: document.getElementById("full_name").value.trim(),
         gender: document.getElementById("gender").value,
         dob: document.getElementById("dob").value,
-        phone: document.getElementById("phone").value,
-        address: document.getElementById("address").value
-      });
-      setStored("bmc_patients", patients);
-      renderPatients();
+        phone: document.getElementById("phone").value.trim(),
+        address: document.getElementById("address").value.trim()
+      };
+
+      const { error } = await supabaseClient.from("patients").insert([newPatient]);
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Save Patient Profile";
+      }
+
+      if (error) {
+        alert("Failed to save patient: " + error.message);
+        return;
+      }
+
+      pForm.reset();
       modal?.classList.add("hidden");
+      await fetchPatients();
+      renderPatients();
     };
   }
 }
 
-// MEDICAL RECORDS PAGE LOGIC
+// ==========================================
+// 7. MEDICAL RECORDS PAGE LOGIC
+// ==========================================
+function renderRecords(filter = "") {
+  const list = document.getElementById("records-list");
+  if (!list) return;
+  list.innerHTML = "";
+
+  const filtered = records.filter(
+    (r) =>
+      r.patient_id.toLowerCase().includes(filter.toLowerCase()) ||
+      r.diagnosis.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No active records found.</td></tr>`;
+    return;
+  }
+
+  filtered.forEach((r) => {
+    list.innerHTML += `
+      <tr>
+        <td><strong>${r.record_id}</strong></td>
+        <td>${r.patient_id}</td>
+        <td>${r.visit_date}</td>
+        <td>${r.diagnosis}</td>
+        <td>${r.treatment}</td>
+        <td>
+          <button class="link-btn" style="color:#d97706;" onclick="archiveRecord('${r.record_id}')">
+            <i class="fa-solid fa-box-archive"></i> Archive
+          </button>
+        </td>
+      </tr>`;
+  });
+}
+
+function renderArchivedRecords() {
+  const list = document.getElementById("archived-records-list");
+  const countBadge = document.getElementById("archived-count-badge");
+  if (countBadge) countBadge.textContent = archivedRecords.length;
+
+  if (!list) return;
+  list.innerHTML = "";
+
+  if (archivedRecords.length === 0) {
+    list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No archived records available.</td></tr>`;
+    return;
+  }
+
+  archivedRecords.forEach((r) => {
+    const formattedDate = r.archived_at ? r.archived_at.split("T")[0] : "N/A";
+    list.innerHTML += `
+      <tr>
+        <td><strong>${r.record_id}</strong></td>
+        <td>${r.patient_id}</td>
+        <td>${r.visit_date}</td>
+        <td>${r.diagnosis}</td>
+        <td>${formattedDate}</td>
+        <td>
+          <button class="link-btn" style="color:#0d9488; margin-right: 12px;" onclick="restoreRecord('${r.record_id}')">
+            <i class="fa-solid fa-rotate-left"></i> Restore
+          </button>
+          <button class="link-btn" style="color:#dc2626;" onclick="deleteArchivedRecord('${r.record_id}')">
+            <i class="fa-solid fa-trash-can"></i> Delete
+          </button>
+        </td>
+      </tr>`;
+  });
+}
+
+function populatePatientsDropdown() {
+  const sel = document.getElementById("record_patient_id");
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select Patient</option>';
+  patients.forEach((p) => {
+    sel.innerHTML += `<option value="${p.patient_id}">${p.full_name} (${p.patient_id})</option>`;
+  });
+}
+
 if (isMedical) {
-  // Render Active Records
-  const renderRecords = (filter = "") => {
-    const list = document.getElementById("records-list");
-    if (!list) return;
-    list.innerHTML = "";
-    const filtered = records.filter(
-      (r) =>
-        r.patient_id.toLowerCase().includes(filter.toLowerCase()) ||
-        r.diagnosis.toLowerCase().includes(filter.toLowerCase())
-    );
-
-    if (filtered.length === 0) {
-      list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No active records found.</td></tr>`;
-      return;
-    }
-
-    filtered.forEach((r) => {
-      list.innerHTML += `
-        <tr>
-          <td><strong>${r.record_id}</strong></td>
-          <td>${r.patient_id}</td>
-          <td>${r.visit_date}</td>
-          <td>${r.diagnosis}</td>
-          <td>${r.treatment}</td>
-          <td>
-            <button class="link-btn" style="color:#d97706;" onclick="archiveRecord('${r.record_id}')">
-              <i class="fa-solid fa-box-archive"></i> Archive
-            </button>
-          </td>
-        </tr>`;
-    });
-  };
-
-  // Render Archived Records Table and update badge counter
-  const renderArchivedRecords = () => {
-    const list = document.getElementById("archived-records-list");
-    const countBadge = document.getElementById("archived-count-badge");
-    if (countBadge) countBadge.textContent = archivedRecords.length;
-
-    if (!list) return;
-    list.innerHTML = "";
-
-    if (archivedRecords.length === 0) {
-      list.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#6b7280; padding: 1.25rem;">No archived records available.</td></tr>`;
-      return;
-    }
-
-    archivedRecords.forEach((r) => {
-      const formattedDate = r.archivedAt ? r.archivedAt.split("T")[0] : "N/A";
-      list.innerHTML += `
-        <tr>
-          <td><strong>${r.record_id}</strong></td>
-          <td>${r.patient_id}</td>
-          <td>${r.visit_date}</td>
-          <td>${r.diagnosis}</td>
-          <td>${formattedDate}</td>
-          <td>
-            <button class="link-btn" style="color:#0d9488; margin-right: 12px;" onclick="restoreRecord('${r.record_id}')">
-              <i class="fa-solid fa-rotate-left"></i> Restore
-            </button>
-            <button class="link-btn" style="color:#dc2626;" onclick="deleteArchivedRecord('${r.record_id}')">
-              <i class="fa-solid fa-trash-can"></i> Delete
-            </button>
-          </td>
-        </tr>`;
-    });
-  };
-
-  // Toggle Collapse/Dropdown for Archived Records
   const toggleArchiveBtn = document.getElementById("toggle-archive-btn");
   const archiveContent = document.getElementById("archived-section-content");
   const archiveChevron = document.getElementById("archive-chevron-icon");
@@ -264,17 +357,6 @@ if (isMedical) {
     });
   }
 
-  const populatePatients = () => {
-    const sel = document.getElementById("record_patient_id");
-    if (!sel) return;
-    sel.innerHTML = '<option value="">Select Patient</option>';
-    patients.forEach((p) => (sel.innerHTML += `<option value="${p.patient_id}">${p.full_name} (${p.patient_id})</option>`));
-  };
-
-  renderRecords();
-  renderArchivedRecords();
-  populatePatients();
-
   const rSearch = document.getElementById("record-search");
   if (rSearch) rSearch.addEventListener("input", (e) => renderRecords(e.target.value));
 
@@ -291,113 +373,156 @@ if (isMedical) {
 
   const rForm = document.getElementById("record-form");
   if (rForm) {
-    rForm.onsubmit = (e) => {
+    rForm.onsubmit = async (e) => {
       e.preventDefault();
-      records.push({
+      const submitBtn = rForm.querySelector("button[type='submit']");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Saving...";
+      }
+
+      const newRecord = {
         record_id: "REC-" + Math.floor(1000 + Math.random() * 9000),
         patient_id: document.getElementById("record_patient_id").value,
         visit_date: document.getElementById("visit_date").value,
-        diagnosis: document.getElementById("diagnosis").value,
-        treatment: document.getElementById("treatment").value,
-        notes: document.getElementById("notes").value
-      });
-      setStored("bmc_records", records);
-      renderRecords();
+        diagnosis: document.getElementById("diagnosis").value.trim(),
+        treatment: document.getElementById("treatment").value.trim(),
+        notes: document.getElementById("notes").value.trim(),
+        is_archived: false
+      };
+
+      const { error } = await supabaseClient.from("records").insert([newRecord]);
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Save Record";
+      }
+
+      if (error) {
+        alert("Failed to save record: " + error.message);
+        return;
+      }
+
       modal?.classList.add("hidden");
       rForm.reset();
+      await fetchRecords();
+      renderRecords();
     };
   }
 
-  // ARCHIVE RECORD ACTION
-  window.archiveRecord = (id) => {
-    if (confirm("Are you sure you want to archive this record?")) {
-      const recordToArchive = records.find((r) => r.record_id === id);
+  // ARCHIVE RECORD (Sets flag is_archived: true in Supabase)
+  window.archiveRecord = async (id) => {
+    if (!confirm("Are you sure you want to archive this record?")) return;
 
-      if (recordToArchive) {
-        archivedRecords = getStored("bmc_archived_records", []);
-        archivedRecords.push({ ...recordToArchive, archivedAt: new Date().toISOString() });
-        setStored("bmc_archived_records", archivedRecords);
+    const { error } = await supabaseClient
+      .from("records")
+      .update({ is_archived: true, archived_at: new Date().toISOString() })
+      .eq("record_id", id);
 
-        records = records.filter((r) => r.record_id !== id);
-        setStored("bmc_records", records);
-
-        renderRecords();
-        renderArchivedRecords();
-      }
+    if (error) {
+      alert("Error archiving: " + error.message);
+      return;
     }
+
+    await fetchRecords();
+    renderRecords();
+    renderArchivedRecords();
   };
 
-  // RESTORE ARCHIVED RECORD ACTION
-  window.restoreRecord = (id) => {
-    if (confirm("Restore this record back to active records?")) {
-      const recordToRestore = archivedRecords.find((r) => r.record_id === id);
+  // RESTORE ARCHIVED RECORD
+  window.restoreRecord = async (id) => {
+    if (!confirm("Restore this record back to active records?")) return;
 
-      if (recordToRestore) {
-        archivedRecords = archivedRecords.filter((r) => r.record_id !== id);
-        setStored("bmc_archived_records", archivedRecords);
+    const { error } = await supabaseClient
+      .from("records")
+      .update({ is_archived: false, archived_at: null })
+      .eq("record_id", id);
 
-        delete recordToRestore.archivedAt;
-        records.push(recordToRestore);
-        setStored("bmc_records", records);
-
-        renderRecords();
-        renderArchivedRecords();
-      }
+    if (error) {
+      alert("Error restoring: " + error.message);
+      return;
     }
+
+    await fetchRecords();
+    renderRecords();
+    renderArchivedRecords();
   };
 
-  // PERMANENTLY DELETE ARCHIVED RECORD ACTION
-  window.deleteArchivedRecord = (id) => {
-    if (confirm("Are you sure you want to permanently delete this archived record? This action cannot be undone.")) {
-      archivedRecords = archivedRecords.filter((r) => r.record_id !== id);
-      setStored("bmc_archived_records", archivedRecords);
-      renderArchivedRecords();
+  // PERMANENTLY DELETE ARCHIVED RECORD
+  window.deleteArchivedRecord = async (id) => {
+    if (!confirm("Are you sure you want to permanently delete this record? This cannot be undone.")) return;
+
+    const { error } = await supabaseClient
+      .from("records")
+      .delete()
+      .eq("record_id", id);
+
+    if (error) {
+      alert("Error deleting: " + error.message);
+      return;
     }
+
+    await fetchRecords();
+    renderArchivedRecords();
   };
 }
 
-// REPORTS PAGE LOGIC
-if (isReport) {
+// ==========================================
+// 8. REPORTS PAGE LOGIC
+// ==========================================
+function populateReportPatientSelect() {
   const sel = document.getElementById("report-patient-select");
-  if (sel) {
-    sel.innerHTML = '<option value="">Select Patient</option>';
-    patients.forEach((p) => (sel.innerHTML += `<option value="${p.patient_id}">${p.full_name} (${p.patient_id})</option>`));
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select Patient</option>';
+  patients.forEach((p) => {
+    sel.innerHTML += `<option value="${p.patient_id}">${p.full_name} (${p.patient_id})</option>`;
+  });
 
-    const queryPatient = new URLSearchParams(window.location.search).get("patient_id");
-    if (queryPatient) sel.value = queryPatient;
-  }
+  const queryPatient = new URLSearchParams(window.location.search).get("patient_id");
+  if (queryPatient) sel.value = queryPatient;
+}
 
+if (isReport) {
   const genBtn = document.getElementById("generate-report-btn");
   if (genBtn) {
     genBtn.onclick = () => {
+      const sel = document.getElementById("report-patient-select");
       const pId = sel?.value;
       if (!pId) return alert("Please select a patient.");
 
       const p = patients.find((pat) => pat.patient_id === pId);
+      // Include all non-archived visits for that patient
       const pRecs = records.filter((r) => r.patient_id === pId);
 
       document.getElementById("report-content").innerHTML = `
         <h3>Patient Profile</h3>
-        <p><strong>Name:</strong> ${p.full_name} | <strong>ID:</strong> ${p.patient_id}</p>
-        <p><strong>Gender:</strong> ${p.gender} | <strong>DOB:</strong> ${p.dob}</p>
-        <p><strong>Phone:</strong> ${p.phone} | <strong>Address:</strong> ${p.address || "N/A"}</p>
+        <p><strong>Name:</strong> ${p?.full_name || "N/A"} | <strong>ID:</strong> ${pId}</p>
+        <p><strong>Gender:</strong> ${p?.gender || "N/A"} | <strong>DOB:</strong> ${p?.dob || "N/A"}</p>
+        <p><strong>Phone:</strong> ${p?.phone || "N/A"} | <strong>Address:</strong> ${p?.address || "N/A"}</p>
         <br/>
         <h3>Medical History (${pRecs.length} visits)</h3>
         <table border="1" cellpadding="8" style="width:100%; border-collapse:collapse; margin-top:10px;">
           <thead><tr><th>Date</th><th>Diagnosis</th><th>Treatment</th><th>Notes</th></tr></thead>
           <tbody>
-            ${pRecs.map((r) => `<tr><td>${r.visit_date}</td><td>${r.diagnosis}</td><td>${r.treatment}</td><td>${r.notes || "None"}</td></tr>`).join("")}
+            ${
+              pRecs.length > 0
+                ? pRecs.map((r) => `<tr><td>${r.visit_date}</td><td>${r.diagnosis}</td><td>${r.treatment}</td><td>${r.notes || "None"}</td></tr>`).join("")
+                : `<tr><td colspan="4" style="text-align:center;">No active records for this patient.</td></tr>`
+            }
           </tbody>
         </table>`;
 
-      document.getElementById("printable-report").classList.remove("hidden");
+      const printable = document.getElementById("printable-report");
+      printable?.classList.remove("hidden");
       window.print();
-      document.getElementById("printable-report").classList.add("hidden");
+      printable?.classList.add("hidden");
     };
   }
 }
 
-// SIDEBAR TOGGLE
+// ==========================================
+// 9. SIDEBAR TOGGLE (Preserved locally)
+// ==========================================
 const sidebar = document.querySelector(".sidebar");
 const appLayout = document.querySelector(".app-layout");
 const toggleBtn = document.getElementById("toggle-sidebar-btn");
@@ -410,10 +535,10 @@ if (localStorage.getItem("sidebar_collapsed") === "true") {
 toggleBtn?.addEventListener("click", () => {
   sidebar?.classList.toggle("collapsed");
   appLayout?.classList.toggle("has-collapsed-sidebar");
-  
+
   const isCollapsed = sidebar?.classList.contains("collapsed");
   localStorage.setItem("sidebar_collapsed", isCollapsed);
 });
 
-// RUN AUTH CHECK ON LOAD
+// Run auth check on script load
 checkAuth();
